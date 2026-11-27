@@ -49,3 +49,34 @@ export async function createLink(url: string): Promise<ShortLink> {
   }
   throw new Error("Unexpected response from the server.");
 }
+
+export interface LinkItem {
+  code: string;
+  short_url: string;
+  url: string;
+  created_at: string;
+}
+
+function isLinkItem(v: unknown): v is LinkItem {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.code === "string" &&
+    typeof o.short_url === "string" &&
+    typeof o.url === "string" &&
+    typeof o.created_at === "string"
+  );
+}
+
+export async function listLinks(): Promise<LinkItem[]> {
+  let res: Response;
+  try {
+    res = await fetch("/api/links");
+  } catch {
+    throw new Error("Network error: could not reach the server. Try again.");
+  }
+  if (!res.ok) throw new Error(await errorMessage(res));
+  const body: unknown = await res.json().catch(() => null);
+  if (Array.isArray(body) && body.every(isLinkItem)) return body;
+  throw new Error("Unexpected response from the server.");
+}

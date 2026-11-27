@@ -1,21 +1,19 @@
 STATUS: READY
 
 ## What was built
-Round 2 fixes for the api service. The README was added and the per-request PRAGMA cost was cut.
-- Added `solutions/url-shortener/README.md` with local run steps, the Docker run, `DB_PATH` and `BASE_URL`, and the open-redirect note.
-- `api/app/db.py`: `journal_mode=WAL` now runs only in `init_db`, because WAL persists in the file. The redundant `PRAGMA busy_timeout` was removed, since `sqlite3.connect(timeout=5)` already sets it.
+v2 of the api: `GET /api/links` (10 newest links, `{code, short_url, url, created_at}`, `Cache-Control: no-store`) in `app/main.py`, `db.recent_links()` in `app/db.py`, and `base_url()` shared with POST. A "visible to everyone" notice was added to `solutions/url-shortener/README.md` (FM-22 test reads it). v1 behaviour is unchanged.
 
 ## Where each invariant and failure mode is handled
-Unchanged from round 1.
-- FM-1 and FM-10 (concurrent create, restart idempotence): `api/app/db.py` `create_link` (single-statement `ON CONFLICT(url) DO NOTHING`, code PK, retry) and `init_db`.
-- Input validation: `api/app/urls.py` `normalize_url`.
-- 413/422/500 handling: `api/app/main.py`.
+- FM-18 ordering: `app/db.py` `recent_links`, `ORDER BY created_at DESC, rowid DESC LIMIT ?` (limit is the constant `RECENT_LIMIT`).
+- FM-13 routing: `app/main.py` `list_links` is registered before `/{code}`; 405 goes through `http_error`.
+- FM-14 DB failure: `list_links` catches `sqlite3.Error` and returns 500 "Internal error".
+- FM-16 base: `base_url()` in `app/main.py`, used by both handlers.
+- FM-20 freshness: `NO_STORE` header on the list response.
+- FM-22: README section "recent links (v2)".
+- FM-1/2/7/10 etc.: unchanged from v1 (`app/db.py` `create_link`, `app/urls.py`).
 
 ## Decisions and trade-offs
-- I did not change the chunked-body size check or the 405 `no-store` behaviour. The review called both minor and not required.
+No index added, as the design says. The README is outside the api folder, so I appended a short section because a locked test requires it.
 
 ## Local check results
-- ruff passed.
-- mypy --strict passed.
-- pytest: 122 passed on the second full run.
-- The first full run had one failure, `test_perf_10k_links`, on a timing assertion under load. It passed on its own in 13.5 s and in the second full run.
+ruff clean, `mypy --strict app tests` clean, pytest 144 passed, uvicorn boot: `/healthz` returns 200 and `/api/links` returns `[]`.

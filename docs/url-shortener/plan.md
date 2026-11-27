@@ -1,7 +1,7 @@
 # Plan
 
 ## Deliverable and layout
-Workspace root:
+`solutions/url-shortener/`
 - `api/`: FastAPI service (Python 3.12, uv).
 - `web/`: React + TypeScript (Vite) single page: URL form, shows the short link with a copy button.
 - `docker-compose.yml`: api + web, SQLite file on a named volume.
@@ -14,6 +14,11 @@ Workspace root:
 - Codes: random 7-char base62; retry on code collision. Duplicate (normalized) URL returns the existing row (200), a new one gets 201.
 - Open redirect: scheme allowlist plus the rules above; no domain blocking or preview page.
 
+## v2 change: recent links list (defaults accepted by the user)
+- API: `GET /api/links` returns the 10 newest rows (`ORDER BY created_at DESC, rowid DESC LIMIT 10`) as `{code, short_url, url, created_at}`. No new table.
+- Web: a "Recent links" list under the form. Each row is an `<a href=short_url target="_blank" rel="noopener noreferrer">` plus the full URL as text. Loaded on page open, refreshed after a successful create.
+- Tests: max 10 newest first, empty and short lists, resubmit does not reorder, link attributes, list refresh after create, list failure leaves the form working.
+
 ## Build order and tests
 1. API: validation/normalization, create, redirect, storage. 2. Web UI. 3. Docker compose and run docs.
 Risk tests: mixed-case and leading-space `javascript:` rejected, `user:password@host` rejected, missing host/control characters rejected, `http://a.com` and `http://a.com/` same code, `http` and `https` different codes, default-port and host-case normalization, duplicate URL returns same code, concurrent creates of the same URL give one row, code collision retry, unknown code 404, redirect is 302 with no-store, data survives restart. UI (Vitest): form success, error, and copy states.
@@ -22,4 +27,4 @@ Risk tests: mixed-case and leading-space `javascript:` rejected, `user:password@
 Local: `uv run uvicorn` in `api/`, `npm run dev` in `web/` (proxies to the API). Docker: `docker compose up`.
 
 ## Out of scope
-Auth, custom aliases, expiry, click counters, link history, rate limiting, deletion, phishing-domain blocking, preview page, normalization beyond the agreed list (http to https upgrade, trailing slash, query order, path case, fragments, IDN).
+Auth, custom aliases, expiry, click counters, link history beyond the fixed top-10 list (no paging, search, per-user lists, polling), rate limiting, deletion, phishing-domain blocking, preview page, normalization beyond the agreed list (http to https upgrade, trailing slash, query order, path case, fragments, IDN).

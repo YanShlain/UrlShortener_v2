@@ -32,6 +32,13 @@ def error(status: int, detail: str, headers: dict[str, str] | None = None) -> JS
     return JSONResponse({"detail": detail}, status_code=status, headers=headers)
 
 
+def base_url(request: Request) -> str:
+    base = os.environ.get("BASE_URL", "").rstrip("/")
+    if not base:
+        base = f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
+    return base
+
+
 @app.exception_handler(StarletteHTTPException)
 async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
     if exc.status_code == 404:  # unmatched paths like /..%2f
@@ -80,12 +87,24 @@ async def create_link(request: Request) -> JSONResponse:
     except (sqlite3.Error, db.CodesExhausted) as exc:
         log.error("create failed: %s", type(exc).__name__)
         return error(500, "Internal error")
-    base = os.environ.get("BASE_URL", "").rstrip("/")
-    if not base:
-        base = f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
     return JSONResponse(
-        {"code": code, "short_url": f"{base}/{code}"}, status_code=201 if created else 200
+        {"code": code, "short_url": f"{base_url(request)}/{code}"},
+        status_code=201 if created else 200,
     )
+
+
+@app.get("/api/links")
+def list_links(request: Request) -> JSONResponse:
+    try:
+        rows = db.recent_links()
+    except sqlite3.Error as exc:
+        log.error("list failed: %s", type(exc).__name__)
+        return error(500, "Internal error")
+    base = base_url(request)
+    items = [
+        {"code": c, "short_url": f"{base}/{c}", "url": u, "created_at": t} for c, u, t in rows
+    ]
+    return JSONResponse(items, headers=NO_STORE)
 
 
 @app.get("/{code}")

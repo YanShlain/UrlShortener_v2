@@ -64,6 +64,19 @@ def get_url(code: str) -> str | None:
     return None if row is None else str(row[0])
 
 
+RECENT_LIMIT = 10  # fixed; never taken from the request
+
+
+def recent_links(limit: int = RECENT_LIMIT) -> list[tuple[str, str, str]]:
+    """Newest first; rowid breaks same-second ties. Read-only, one statement."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT code, url, created_at FROM links ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [(str(r[0]), str(r[1]), str(r[2])) for r in rows]
+
+
 def create_link(url: str) -> tuple[str, bool]:
     """Return (code, created). Insert-or-fetch with no check-then-act."""
     with connect() as conn:
