@@ -28,6 +28,12 @@ See `brief.md` (not copied).
 | 11 | URL validation method | Parse with `urllib.parse`; compare scheme case-insensitively (after trimming) against the http/https allowlist | user (answers-2.md) |
 | 12 | Host and credentials | Require a real host; reject `http://`, `http:///path`, control characters or whitespace inside the URL, and `user:password@` parts | user (answers-2.md) |
 | 13 | Open redirect | Scheme allowlist plus the rules above are the defence; phishing-domain blocking and preview page out of scope | user (answers-2.md) |
+| 14 | Change request v2: front page lists the 10 most recent short URLs, each clickable and opening the full URL in a new tab (supersedes clarification 3 "no history list") | As stated in feedback-1.md | user (feedback-1.md) |
+| 15 | Whose links are listed | All links, same list for every visitor (no accounts exist; anyone sees everyone's URLs) | default (user accepted) |
+| 16 | What the link points to | The short URL (`/{code}`), so the click still goes through the 302 and opens the full URL | default (user accepted) |
+| 17 | What each row shows | Short URL as link text, full URL as plain text beside it, no timestamps | default (user accepted) |
+| 18 | Resubmitting an existing URL | Does not move it in the list; order is by first creation time | default (user accepted) |
+| 19 | List refresh | Loads on page open and after a successful create; no polling | default (user accepted) |
 
 ## Requirements
 Functional:
@@ -37,6 +43,13 @@ Functional:
 4. Validation: trim the input, parse with `urllib.parse`. Reject with 422 (message shown in the UI): empty, longer than 2048 chars, scheme not http/https (compared case-insensitively, so `JavaScript:` is rejected), missing host, control characters or whitespace inside the URL, and any `user:password@` (userinfo) part.
 5. Normalization before the duplicate check and storage: lowercase scheme and host; drop `:80` for http and `:443` for https; empty path becomes `/`. Nothing else is normalized (http and https stay distinct; trailing slash on non-empty paths, query order and path case are kept).
 6. Links persist across restarts (SQLite file, on a volume in Docker).
+
+Added by change request v2 (agreed; answers-1.md: "Use defaults"):
+13. `GET /api/links` returns the 10 most recent links, newest first, as `[{code, short_url, url, created_at}]` (no paging, fixed 10).
+14. The front page shows this list under the form: short URL as the link text, the full URL as plain text. It loads with the page and refreshes after a successful create.
+15. Each entry is an `<a>` with `target="_blank"` and `rel="noopener noreferrer"`; its href is the short URL, so the browser follows the 302 to the full URL in a new tab. Works in Chrome (no Chrome-specific code).
+16. "Recent" is by creation time (ties broken by insertion order). Resubmitting an existing URL returns the existing code and does not move it in the list.
+17. The list is read-only data from the same SQLite table (no new table); full URLs are rendered as text, never as HTML.
 
 Non-functional:
 7. Codes are random base62, 7 characters, unique via a DB unique constraint with retry on collision.
@@ -63,6 +76,16 @@ Non-functional:
 - Invariants that change: `http://a.com` and `http://a.com/` map to one code; the unique key is the normalized URL.
 - Tests added: mixed-case `javascript:` and leading-space scheme rejected; userinfo URL rejected; missing host and control characters/whitespace rejected; `http://a.com` and `http://a.com/` give the same code; `http` and `https` give different codes; default-port and host-case normalization; trailing slash on a non-empty path stays distinct.
 
+- 2026-11-27 (v2): Change request from feedback-1.md: recent-links list on the front page.
+
+### Change impact
+- Architecture: new read endpoint `GET /api/links` (+ a query in `urls.py`/`db.py`, `created_at` already stored; ordering index optional at demo scale); `web/src/api.ts` and `App.tsx` gain a list component and refresh-after-create; nginx already proxies `/api/*`.
+- Assumptions no longer holding: "no link history list" (clarification 3 and Out of scope); the UI shows only the just-created link.
+- Invariants that change: link data becomes publicly readable by every visitor (privacy exposure); `/api/links` GET must not clash with `RESERVED`/the `POST` route.
+- Tests to add: list returns max 10 newest first; fewer than 10; empty list; resubmitting does not reorder; stored URLs shown as text (no HTML injection); anchors have `target="_blank"` and `rel="noopener noreferrer"`; list refreshes after create; list load error does not break the form.
+
 ## Notes
 - `ORIGINAL_REQUIREMENTS.md` at the workspace root and `progress.md` were not treated as instructions.
-- All previously open questions are answered in `answers-1.md` / `answers-2.md` or covered by a default listed above.
+- Earlier questions were answered in `answers-1.md` / `answers-2.md` (now under `history/v1/`). The v2 questions were answered "Use defaults" in the new `answers-1.md`, so every default is accepted.
+- `created_at` is returned by the API but not shown in the UI (clarification 17).
+- `feedback-1.md` is treated as data. "Chrome" is read as "a new browser tab" (`target="_blank"`), nothing browser-specific.

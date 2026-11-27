@@ -1,24 +1,22 @@
-# Briefing: URL shortener
+# Briefing: URL shortener (v2: recent links list)
 
 ## Architecture I expect
-- Two services: a FastAPI `api` and a React/Vite `web` single page.
-- The web form posts `{url}` to `POST /api/links` and shows `short_url` as text with a Copy button.
-- One function, `normalize_url`, validates and normalizes using `urllib.parse`. It is the only way a URL reaches the DB.
-- SQLite (WAL, busy timeout) holds `links(code PK, url UNIQUE, created_at)`.
-- Create is a single `INSERT ... ON CONFLICT(url) DO NOTHING`, then a fetch if no row was inserted. This gives 201 for new links and 200 for duplicates.
-- `GET /{code}` accepts only 7 base62 characters and returns 302 with `Cache-Control: no-store`. Unknown codes return 404.
-- The web proxy (Vite in dev, nginx in Docker) forwards `/api` and short codes to the api, so no CORS is needed. Compose has a volume for the DB and healthchecks.
+- Two services: a FastAPI `api` and a React/Vite `web` single page, SQLite (WAL, busy timeout) with one table `links(code PK, url UNIQUE, created_at)`.
+- `POST /api/links` validates and normalizes with one function, `normalize_url`, then does a single `INSERT ... ON CONFLICT(url) DO NOTHING`: 201 for new, 200 for duplicates. `GET /{code}` returns 302 with `no-store`.
+- v2: new `GET /api/links` runs one read-only query, `ORDER BY created_at DESC, rowid DESC LIMIT 10`, and returns `[{code, short_url, url, created_at}]` with `no-store`. No new table, no schema change.
+- v2: the page shows a "Recent links" list under the form. It loads on open and after each successful create, with no polling. Each row is an `<a href=short_url target="_blank" rel="noopener noreferrer">` and the full URL as plain text.
+- The proxy (Vite in dev, nginx in Docker) already forwards `/api/*` and short codes with the `Host` header, so there is no CORS and no config change.
 
 ## Riskiest failure modes
-1. Concurrent creates of the same URL. The UNIQUE constraint and the single-statement upsert make this safe, with no check-then-act. A code collision (PK) raises `IntegrityError` and retries with a new code.
-2. Scheme and URL validation holes, such as `JavaScript:`, ` javascript:`, `good.com@evil.com`, `http:///x`, and tabs or newlines that `urlsplit` silently strips. The design checks characters on the raw string first, then parses, then applies the allowlist, host and userinfo rules. Everything is validated server-side.
-3. Normalization over- or under-reach. `http://a.com` and `http://a.com/` must match, while http vs https, trailing slash on a non-empty path, query order and path case must not. The fix is a short, explicit rebuild of the URL, with a test for each case.
+1. Stored data shown to everyone (XSS and privacy). Every visitor sees every URL. The UI renders URLs as React text nodes only, and the only `href` is the server-built `short_url`, so the full URL never becomes markup. Clicks go through the 302. Anchors carry `rel="noopener noreferrer"`. The privacy exposure is accepted, documented and shown in the UI.
+2. Wrong order or a moving list. Same-second creates tie on `created_at`, so `rowid DESC` breaks ties. Resubmitting a URL takes the DO NOTHING path and writes nothing, so it cannot move. The limit is a constant and no request parameter reaches it.
+3. Stale or broken list in the UI. The list reloads after every create, ignores out-of-order responses, and uses `no-store`. A list failure shows an inline error and never blocks the form. The `short_url` base comes from the same helper as create (`BASE_URL`, else the forwarded `Host`), so list links open from the browser.
 
-Other traps: a generated code equal to `healthz`, 301 or cached redirects, a wrong `short_url` base behind the proxy (the `Host` header must be forwarded), and invalid ports raising `ValueError` and giving a 500.
+Older risks still covered: concurrent creates of the same URL (UNIQUE plus upsert, no check-then-act), validation holes (`JavaScript:`, userinfo, control characters that `urlsplit` strips), and normalization over-reach.
 
 ## What needs the most scrutiny in generated code
-- `normalize_url`: order of checks, the control-character and whitespace test before `urlsplit`, port parsing, IPv6 hosts, rebuilding the URL.
-- The insert path: confirm there is no SELECT-then-INSERT, that the retry only covers code collisions, and that each request uses its own connection with WAL and busy timeout set.
-- Redirect handler: status 302 (not 301), `no-store` also on 404, and `Location` only from the DB.
-- UI: no `dangerouslySetInnerHTML`, no `href` from user text, errors shown, stale result cleared, clipboard failure handled.
-- Tests: check they are not weakened, and that the concurrency test uses real threads on a real SQLite file.
+- `GET /api/links`: one SELECT, constant `LIMIT 10`, `rowid` tie-break, `no-store`, 500 without a stack trace, and the route not clashing with `/{code}` or `POST /api/links`.
+- The shared base-URL helper: not copy-pasted, and used by both endpoints.
+- `RecentLinks` in the UI: no `dangerouslySetInnerHTML`, no `href` from the stored URL, `target` and `rel` on every anchor, stale-response guard, error and empty states.
+- Refresh after create: it also runs on a 200 (duplicate), and a failed refresh does not hide the new short URL.
+- The insert path and `normalize_url` from v1: confirm nothing changed, and that tests were not weakened.

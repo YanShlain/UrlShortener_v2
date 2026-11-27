@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from "react";
-import { createLink, validateUrl } from "./api";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { createLink, listLinks, validateUrl } from "./api";
+import RecentLinks, { type ListState } from "./RecentLinks";
 
 type Status =
   | { state: "idle" }
@@ -13,6 +14,23 @@ export default function App() {
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<Status>({ state: "idle" });
   const [copy, setCopy] = useState<CopyState>("idle");
+
+  const [list, setList] = useState<ListState>({ state: "loading" });
+  const latest = useRef(0);
+
+  const loadList = useCallback(async () => {
+    const id = ++latest.current;
+    try {
+      const items = await listLinks();
+      if (id === latest.current) setList({ state: "ok", items });
+    } catch {
+      if (id === latest.current) setList({ state: "error" });
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadList();
+  }, [loadList]);
 
   const loading = status.state === "loading";
 
@@ -29,6 +47,7 @@ export default function App() {
     try {
       const link = await createLink(input);
       setStatus({ state: "success", shortUrl: link.short_url });
+      void loadList();
     } catch (err) {
       setStatus({
         state: "error",
@@ -86,6 +105,7 @@ export default function App() {
           )}
         </div>
       )}
+      <RecentLinks list={list} />
     </main>
   );
 }

@@ -14,7 +14,14 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 function mockFetch(impl: (...args: unknown[]) => Promise<Response>): FetchMock {
-  const fn = vi.fn(impl);
+  // v2: the page also loads GET /api/links; answer it with an empty list, route the rest to impl.
+  const fn = vi.fn((...args: unknown[]) => {
+    const init = args[1] as RequestInit | undefined;
+    if (args[0] === "/api/links" && (init?.method ?? "GET") === "GET") {
+      return Promise.resolve(jsonResponse(200, []));
+    }
+    return impl(...args);
+  });
   vi.stubGlobal("fetch", fn);
   return fn;
 }
@@ -52,7 +59,9 @@ describe("URL shortener UI", () => {
     submit(container, "https://example.com/docs");
     expect(await screen.findByText(SHORT)).toBeTruthy();
     expect(screen.getByRole("button", { name: /copy/i })).toBeTruthy();
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls.find(
+      (c) => (c[1] as RequestInit | undefined)?.method === "POST",
+    ) as [string, RequestInit];
     expect(url).toBe("/api/links");
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toEqual({ url: "https://example.com/docs" });
@@ -130,7 +139,9 @@ describe("URL shortener UI", () => {
     const { container } = render(<App />);
     fireEvent.click(submitButton(container));
     await waitFor(() => expect(screen.queryByRole("button", { name: /copy/i })).toBeNull());
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(
+      fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === "POST"),
+    ).toHaveLength(0);
   });
 
   it("shows an error when the clipboard API is missing and not Copied", async () => {

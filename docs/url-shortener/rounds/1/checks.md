@@ -1,14 +1,14 @@
 GATE: PASS
 ROUND: 1
-SOURCE_SHA: d96cef6c69670d813e76a398a8f08919c440734c410de29c28f319c3d27b13f6
-TESTS_SHA: 178a4540fbe9bd84a6f4592a94007b41633ae4f2594939cab9d63afa8185ebf7
+SOURCE_SHA: d77126fa6c5ae8fc170490d181b62f37af7fe4528bc2f2843fbfd5756e6783f3
+TESTS_SHA: b2b045635b8b7d7ae99bb3356f196101a8f8e732f4e2d04d2cb668565f865870
 
 - [x] test lock
 - [x] forbidden patterns
 - [x] api: uv sync
 - [x] api: ruff
 - [x] api: mypy --strict
-- [x] api: pytest - 122 passed, 1 warning in 22.47s
+- [x] api: pytest - 144 passed, 1 warning in 23.13s
 - [x] web: npm install
 - [x] web: typecheck
 - [x] web: test
@@ -17,9 +17,9 @@ TESTS_SHA: 178a4540fbe9bd84a6f4592a94007b41633ae4f2594939cab9d63afa8185ebf7
 
 ## Slowest tests
 ```
-12.33s call     tests/test_api.py::test_perf_10k_links
-0.94s call     tests/test_api.py::test_perf_concurrent_creates_under_5s
-0.83s call     tests/test_api.py::test_risk_fm10_restart_idempotent
-0.76s call     tests/test_api.py::test_risk_fm1_concurrent_same_url
-0.46s call     tests/test_api.py::test_edge_concurrent_distinct_urls
+9.36s call     tests/test_api.py::test_perf_10k_links
+1.90s call     tests/test_recent_links.py::test_perf_list_10k_rows
+1.00s call     tests/test_api.py::test_risk_fm10_restart_idempotent
+0.53s call     tests/test_api.py::test_perf_concurrent_creates_under_5s
+0.45s call     tests/test_api.py::test_api_codes_random_not_sequential
 ```
